@@ -1,0 +1,117 @@
+---
+title: "Predicting the quality of barbell lifts"
+author: "Alicia Korol"
+date: "March 24, 2018"
+output: html_document
+---
+```{r warnings, echo=FALSE}
+options(warn=-1)
+```
+
+##### **Introduction**
+
+Personal activity monitors are cost-effective devices to collect data on exercise quantity. They are also useful to track the quality of excerise as determined by proper body mechanics (e.g., position). The goal of this project was to use this type of data to predict proper exercise technique.
+
+##### **Data collection and required packages**
+
+The data for this project come from [a study on weight lifting](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). Accelerometers were placed on the belt, forearm, arm, and dumbell of 6 participants who performed barbell lifts correctly and incorrectly in 5 different ways. The accelerators measured various types of movements in three dimensions, such as roll, pitch, and acceleration. 
+
+```{r loading data and packages, echo=TRUE, message=FALSE,comment=""}
+setwd("~/datascience/practicalmachinelearning/project/")
+training<-read.csv("pml-training.csv",header=TRUE, stringsAsFactors = FALSE)
+testing <-read.csv("pml-testing.csv",header=TRUE, stringsAsFactors = FALSE)
+library(caret)
+library(VIM)
+```
+
+##### **Preprocessing data**
+
+A number of variables in the training set were found to have a high proportion of missing values (>90%), while other variables had no missing values (Fig. 1). These 102 columns were removed from both the training and testing sets, along with non-predictor variables (e.g., id variables and the sort). The variables in the training and the testing dataframes were then in accordance with the exception of, classe, which appears in the training dataframe. The response variable, classe, was converted to a factor.
+
+```{r missing data,comment=""}
+#total number of rows
+nrow(training)
+#number of rows with missing data
+nrow(training[!complete.cases(training),]) 
+```
+
+```{r figure generation, echo=TRUE,comment=""}
+m1<-aggr(training[,1:53], prop = F, numbers = T, plot=FALSE)
+m2<-aggr(training[,54:107], prop = F, numbers = T, plot=FALSE)
+m3<-aggr(training[,108:160], prop = F, numbers = T, plot=FALSE)
+```
+
+```{r figure final,fig.cap="Fig.1 Number of missing values per variable out of 19,622 total records and 160 variables",comment=""}
+par(mfrow=c(2,2),mar=c(4,4,2,2))
+barplot(m1$missings$Count, names.arg = 1:53,
+        col="red",ylim=c(0,20000),xlab="Column Number",
+        ylab="Number of Missing")
+barplot(m2$missings$Count, names.arg = 54:107,
+        col="red",ylim=c(0,20000),xlab="Column Number",
+        ylab="Number of Missing")
+barplot(m3$missings$Count, names.arg = 108:160,
+        col="red",ylim=c(0,20000),xlab="Column Number",
+        ylab="Number of Missing")
+```
+
+```{r eliminating missing, message=FALSE,comment=""}
+traintemp<-sapply(training[,c(1,3:159)],as.numeric)
+traintemp1<-as.data.frame(traintemp)
+training2 <- data.frame( training[,c(2,160)],traintemp1)
+
+testtemp<-sapply(testing[,c(1,3:159)],as.numeric)
+testtemp1<-as.data.frame(testtemp)
+testing2 <- data.frame(testing[,c(2,160)],testtemp1)
+
+a <- sapply(training2,is.na)
+b <- apply(a,sum,MARGIN = 2)
+c <- ifelse(b==0,FALSE,TRUE) 
+#Number of columns with missing values
+sum(c)
+
+#Removing columns with missing values
+training3 <- training2[,!c]
+testing3 <- testing2[,!c]
+```
+
+```{r final preprocessing,comment=""}
+nsv_train <- nearZeroVar(training3,saveMetrics=TRUE)
+#Any variables with 1 unique value?
+sum(nsv_train$zeroVar==TRUE) 
+
+training4 <- training3[,-c(1,3:6)]
+testing4 <- testing3[,-c(1:6)]
+
+#all testing variables present in training table with the exception of the response variable ("classe")
+ncol(training4)
+ncol(testing4)
+names(testing4) %in% names(training4)
+
+training4$classe <- as.factor(training4$classe)
+```
+
+##### **Dividing the training set into training and testing subsets**
+
+The training data set was used to train the prediction model. To compare the out-of-sample error of different prediction functions, the training set was further divided randomly into training and testing subsets (i.e., reflecting 70% and 30% of the data, respectively). Cross-validation was automatically performed during model training, and thus the training set was not manually subdivided for this purpose.
+
+```{r dividing the training set, comment=""}
+inTrain <- createDataPartition(y=training4$classe, p=.7,list=FALSE)
+trainingsub <- training4[inTrain,]
+testingsub <- training4[-inTrain,]
+```
+
+##### **Training and testing the prediction model**
+
+The model was trained using the bagged CART algorithm ("treebag" method) for classification of the 5 ways of performing barbell lifts. Bagging methods are an ensemble technique that increase prediction accuracy by using multiple models trained on subsets of the data. Applying cross-validation with 10 resamples, the estimated out-of-sample accuracy of the treebag function was 98.4%. Two other non-ensemble classification methods, mixed discriminant analysis ("mda") and classification and regression trees ("rpart"), had significantly lower out-of-sample accuracy (<80%) and were not used for training (code not shown). 
+
+Because multiple prediction functions were trained and compared using the cross-validation results, the prediction model was tested on another data set - the "testing subset" of the training data. The estimated out-of-sample accuracy of the final model was 98.6%.
+
+```{r training and testing model, comment=""}
+set.seed(737)
+model <- train(classe~.,method="treebag",data=trainingsub,
+                   trControl=trainControl(method="cv",number=10)) 
+model$results
+pred <-predict(model, newdata=testingsub)
+results<-confusionMatrix(pred,testingsub$classe)
+results$overall
+```
