@@ -1,0 +1,165 @@
+---
+title: "Reactive Results of Chick Weight Experiment"
+author: "Alicia Korol"
+date: "March 30, 2018"
+output: ioslides_presentation
+smaller: true
+theme: sky
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Chick weight experiment overview 
+
+Experiment described in R:
+
+`?ChickWeight`
+
+<div class="red">
+Description
+
+The body weights of the chicks were measured at birth and every second day thereafter until day 20. They were also measured on day 21. There were four groups on chicks on different protein diets.
+</div>
+
+
+## Data set components 
+
+Variables in the data frame include: 
+
+- `ChickWeight$weight`
+   
+    body weights of chicks
+
+- `ChickWeight$Time`
+   
+    day of experiment
+
+- `ChickWeight$Chick`
+    
+    unique identifier given to each of 50 chicks
+
+- `ChickWeight$Diet`
+    
+    ID of protein diet fed to chicks
+
+## Challenge: Creating compact visuals
+
+Drawbacks of static plots for complex (e.g., grouped) data
+
+- Multiple redundant plots needed to display one data set
+- Large space requirements in HTML documents
+- Plot size is often reduced
+
+<div class="blue">
+**SOLUTION = reactive plots** 
+</div>
+
+```{r packages, echo = FALSE}
+library(shiny)
+library(dplyr)
+library(tidyr)
+```
+
+----
+```{r app}
+data(ChickWeight)
+diet1 <- ChickWeight %>%
+    filter(Diet==1)
+diet2 <- ChickWeight %>%
+    filter(Diet==2)
+diet3 <- ChickWeight %>%
+    filter(Diet==3)
+diet4 <- ChickWeight %>%
+    filter(Diet==4) 
+
+ui <- fluidPage(
+    
+    titlePanel("Effect of different protein diets on chick weights"),
+    
+    # Sidebar with a slider input for number of bins 
+    sidebarLayout(
+        sidebarPanel(
+            selectInput(inputId = "DietSelect",label= "Select Diet",
+                        choices=c("Diet 1","Diet 2","Diet 3","Diet 4")), #see selectInput?
+            #Input name for internal use; label=displayed label/title
+            submitButton("Submit")
+        ),
+        
+        # Show a plot of the generated distribution
+        mainPanel(
+            plotOutput(outputId = "plot1"), #id to be used internally
+            h3("Mean change in chick weight (g) after 21 days:"),
+            textOutput("stats")
+        )
+    )
+)
+
+server <- function(input,output){
+    
+    output$plot1 <- renderPlot({
+        
+        data <- switch(input$DietSelect,
+                       "Diet 1" = diet1,
+                       "Diet 2" = diet2,
+                       "Diet 3" = diet3,
+                       "Diet 4" = diet4)
+        
+        # convert factor to numeric for convenience 
+        data$Chick <- as.numeric(data$Chick)
+        nChick <- length(unique(data$Chick))
+        
+        # get the range for the x and y axis 
+        xrange <- range(data$Time)
+        yrange <- c(25,400)
+        
+        #Set up plot
+        plot(xrange, yrange, type="n", xlab="Time (days)",
+             ylab="Weight (g)" ) 
+        colors <- rainbow(nChick) 
+        linetype <- rep(1,nChick) 
+        plotchar <- rep(18,nChick)
+        
+        # add lines 
+        if(sort(unique(data$Chick))[1]=="1"){m <- 0
+        } else if (sort(unique(data$Chick))[1]=="21") {m <- 20
+        } else if (sort(unique(data$Chick))[1]=="31") {m <- 30
+        } else m <- 41
+        
+        for (i in 1:nChick) { 
+            sub <- subset(data, Chick==i+m) 
+            lines(sub$Time, sub$weight, type="b", lwd=1.5,
+                  lty=linetype[i], col=colors[i], pch=plotchar[i]) 
+        } 
+        
+        # add a title and subtitle 
+        title("Chick Growth")
+        
+        # add a legend 
+        legend(0, 400, unique(data$Chick), cex=0.8, col=colors,
+               pch=plotchar, lty=linetype, title="Chick ID")
+    })
+    
+    
+    output$stats <- renderText({
+        
+        data <- switch(input$DietSelect,
+                       "Diet 1" = diet1,
+                       "Diet 2" = diet2,
+                       "Diet 3" = diet3,
+                       "Diet 4" = diet4)
+        
+        dataT <- data %>%
+            group_by(Time) %>%
+            summarize(mean=mean(weight),n=n())
+        
+        dataT$mean[12]-dataT$mean[1]
+    })
+    
+}
+
+shinyApp(ui = ui, server = server)
+```
+
